@@ -24,13 +24,14 @@
 
   // ---------------- state ----------------
   const defaults = () => ({
-    settings: { fee: 8000, maxTeam: 5, cc: '91', mode: 'invite', invite: '', template: DEFAULT_TEMPLATE, remember: true },
+    settings: { fee: 8000, maxTeam: 5, cc: '91', mode: 'invite', invite: '', template: DEFAULT_TEMPLATE, remember: true, watchMin: 15 },
     regText: '', regName: '', bankText: '', bankName: '',
     regMap: {}, bankMap: {}, bankHeaderRow: 0,
     flags: {}, // key -> { sent: ts|null, added: bool, override: 'verified'|'rejected'|null, note: '' }
   });
   let S = defaults();
-  const view = { filter: 'ALL', q: '', open: new Set() };
+  const view = { filter: 'ALL', q: '', open: new Set(), fresh: new Set() };
+  const watchers = { reg: null, bank: null }; // live file handles; never persisted
   let model = { regT: null, bankT: null, bankAuto: 1, results: [], error: '', credits: 0 };
 
   function load() {
@@ -263,7 +264,7 @@
         h('div', { class: 'small' }, h('label', {}, h('input', { type: 'checkbox', checked: !!f.sent, disabled: !ok && !f.sent, onchange: (e) => setFlag(r, { sent: e.target.checked ? Date.now() : null }) }), ' sent', f.sent ? ' ' + new Date(f.sent).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '')));
       body.append(h('tr', { class: 'main' },
         h('td', {}, r.rowNo),
-        h('td', {}, h('div', { class: 'team' }, r.team || '(no team name)'), h('div', {}, r.leader || '—')),
+        h('td', {}, h('div', { class: 'team' }, r.team || '(no team name)', view.fresh.has(r.key) ? h('span', { class: 'newtag' }, 'NEW') : null), h('div', {}, r.leader || '—')),
         h('td', { class: 'mono' }, r.phone ? '+' + r.phone : '—'),
         h('td', { class: 'mono' }, r.utr || '—'),
         h('td', { class: 'num' }, r.paid ? '₹' + r.paid.toLocaleString('en-IN') : '—'),
@@ -280,15 +281,77 @@
   function readFile(file) {
     return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = () => rej(fr.error); fr.readAsText(file); });
   }
+  function applyText(kind, text, name, resetMaps) {
+    const before = new Set(model.results.map((r) => r.key));
+    if (kind === 'reg') { S.regText = text; S.regName = name; if (resetMaps) S.regMap = {}; }
+    else { S.bankText = text; S.bankName = name; if (resetMaps) { S.bankMap = {}; S.bankHeaderRow = 0; } }
+    save(); recompute();
+    // tag registrations that were not in the previously loaded data (only meaningful if there was data before)
+    if (kind === 'reg') view.fresh = before.size ? new Set(model.results.filter((r) => !before.has(r.key)).map((r) => r.key)) : new Set();
+    return view.fresh.size;
+  }
   async function handleFile(kind, file) {
     if (!file) return;
     try {
-      const text = await readFile(file);
-      if (kind === 'reg') { S.regText = text; S.regName = file.name; S.regMap = {}; }
-      else { S.bankText = text; S.bankName = file.name; S.bankMap = {}; S.bankHeaderRow = 0; }
-      save(); recompute(); renderAll();
-      toast((kind === 'reg' ? 'Registrations' : 'Bank statement') + ' loaded: ' + file.name);
+      const added = applyText(kind, await readFile(file), file.name, true);
+      renderAll();
+      toast((kind === 'reg' ? 'Registrations' : 'Bank statement') + ' loaded: ' + file.name + (added ? ' — ' + added + ' new registration(s) since last time.' : ''));
     } catch (e) { toast('Could not read that file.'); }
+  }
+
+  // ---------- watch a file and re-check on a timer (File System Access API; Chrome/Edge) ----------
+  const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  function renderWatch(kind) {
+    const box = $('.watch[data-kind=' + kind + ']'); if (!box) return;
+    box.replaceChildren();
+    if (!window.showOpenFilePicker) { box.append(h('span', { class: 'hint' }, 'Auto re-check needs Chrome or Edge — use manual upload here.')); return; }
+    const w = watchers[kind];
+    if (!w) { box.append(h('button', { class: 'btn small', type: 'button', onclick: () => startWatch(kind) }, '👁 Watch a file on this computer…')); return; }
+    box.append(h('span', { class: 'on' }, '👁 Watching ' + w.name),
+      h('span', { class: 'muted' }, 'last checked ' + hhmm(w.lastChecked) + ' · next ≈ ' + hhmm(w.lastChecked + S.settings.watchMin * 60000)),
+      h('button', { class: 'btn small', type: 'button', onclick: () => checkWatch(kind, true) }, 'Check now'),
+      h('button', { class: 'btn small', type: 'button', onclick: () => stopWatch(kind) }, 'Stop'));
+  }
+  async function startWatch(kind) {
+    try {
+      const [handle] = await window.showOpenFilePicker({ multiple: false, types: [{ description: 'CSV file', accept: { 'text/csv': ['.csv'], 'text/plain': ['.txt'] } }] });
+      stopWatch(kind, true);
+      watchers[kind] = { handle, name: handle.name, lastMod: -1, size: -1, lastChecked: Date.now(), timer: null, first: true };
+      await checkWatch(kind, true);
+      scheduleWatch(kind);
+    } catch (e) { if (e && e.name !== 'AbortError') toast('Could not open that file for watching.'); }
+  }
+  function scheduleWatch(kind) {
+    const w = watchers[kind]; if (!w) return;
+    clearInterval(w.timer);
+    w.timer = setInterval(() => checkWatch(kind, false), Math.max(1, Number(S.settings.watchMin) || 15) * 60000);
+  }
+  function stopWatch(kind, silent) {
+    const w = watchers[kind]; if (!w) return;
+    clearInterval(w.timer); watchers[kind] = null; renderWatch(kind);
+    if (!silent) toast('Stopped watching.');
+  }
+  const countCode = (c) => model.results.filter((r) => eff(r).code === c).length;
+  async function checkWatch(kind, force) {
+    const w = watchers[kind]; if (!w) return;
+    try {
+      const file = await w.handle.getFile();
+      w.lastChecked = Date.now();
+      if (force || file.lastModified !== w.lastMod || file.size !== w.size) {
+        const changed = file.lastModified !== w.lastMod || file.size !== w.size;
+        w.lastMod = file.lastModified; w.size = file.size;
+        const verifiedBefore = countCode('VERIFIED');
+        const add = applyText(kind, await readFile(file), file.name, w.first);
+        const first = w.first; w.first = false;
+        if (first) { renderAll(); toast('Watching ' + file.name + ' — re-checked every ' + S.settings.watchMin + ' min.' + (add ? ' ' + add + ' new registration(s) since last time.' : '')); }
+        else if (changed) {
+          render();
+          const ver = countCode('VERIFIED') - verifiedBefore;
+          toast(kind === 'reg' ? (add ? add + ' new registration(s) found.' : 'Registrations file updated.') : 'Bank file updated' + (ver > 0 ? ' — ' + ver + ' more team(s) now verified.' : '.'));
+        }
+      }
+    } catch (e) { toast('Lost access to the watched file — pick it again.'); stopWatch(kind, true); }
+    renderWatch(kind);
   }
   function wireDrop(id, inputId, kind) {
     const el = $(id), inp = $(inputId);
@@ -319,6 +382,47 @@
     });
     const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' })), download: 'registration_status.csv' });
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  const fmtTime = (t) => (t ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
+  function exportXlsx() {
+    const rs = model.results;
+    if (!rs.length) { toast('Nothing to export yet.'); return; }
+    const st = (r) => { const e = eff(r); return LABEL[e.code][0].replace(/^\S+\s/, '') + (e.manual ? ' (manual)' : ''); };
+    const ev = (r) => r.bankMatches.map((m) => 'row ' + m.rowNo + (m.date ? ' (' + m.date + ')' : '') + ': ' + m.text).join(' | ');
+    const n = (f) => rs.filter(f).length, code = (r) => eff(r).code;
+    const summary = [
+      ['Registration report', ''],
+      ['Generated', fmtTime(Date.now())],
+      ['Registrations file', S.regName], ['Bank statement file', S.bankName],
+      ['Fee per team', Number(S.settings.fee) || 0],
+      ['', ''],
+      ['Total registrations', rs.length],
+      ['Verified', n((r) => code(r) === 'VERIFIED')],
+      ['Pending (payment not found)', n((r) => code(r) === 'PENDING')],
+      ['Underpaid', n((r) => code(r) === 'UNDERPAID')],
+      ['Duplicate / needs review / rejected', n((r) => ['DUPLICATE', 'REVIEW', 'REJECTED'].includes(code(r)))],
+      ['Invites sent', n((r) => flag(r).sent)],
+      ['Added to group', n((r) => flag(r).added)],
+      ['Verified but not yet invited', n((r) => isOk(r) && !flag(r).sent)],
+    ];
+    summary[0].bold = true;
+    const all = [['#', 'Team', 'Leader', 'Phone', 'UTR', 'Paid (₹)', 'Status', 'Reason', 'Invite sent at', 'Added to group', 'Bank evidence', 'Note']];
+    rs.forEach((r) => all.push([r.rowNo, r.team, r.leader, r.phone ? '+' + r.phone : '', r.utr, r.paid || '', st(r), r.reason, fmtTime(flag(r).sent), flag(r).added ? 'Yes' : '', ev(r), flag(r).note || '']));
+    const invited = [['Team', 'Leader', 'Phone', 'Invite sent at', 'Added to group', 'Paid (₹)']];
+    rs.filter((r) => flag(r).sent).sort((a, b) => flag(a).sent - flag(b).sent)
+      .forEach((r) => invited.push([r.team, r.leader, r.phone ? '+' + r.phone : '', fmtTime(flag(r).sent), flag(r).added ? 'Yes' : 'No', r.paid || '']));
+    const todo = [['Team', 'Leader', 'Phone', 'Status', 'What to do']];
+    rs.filter((r) => !isOk(r)).forEach((r) => todo.push([r.team, r.leader, r.phone ? '+' + r.phone : '', st(r), r.reason]));
+    const bytes = Xlsx.build([
+      { name: 'Summary', rows: summary, widths: [38, 34] },
+      { name: 'All teams', rows: all, header: true },
+      { name: 'Invited', rows: invited, header: true },
+      { name: 'Needs action', rows: todo, header: true },
+    ]);
+    const a = h('a', { href: URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })), download: 'registration_report_' + new Date().toISOString().slice(0, 10) + '.xlsx' });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast('Excel report downloaded.');
   }
 
   function init() {
@@ -357,10 +461,15 @@
       copyText(list); toast('Copied. Use it to approve join requests / add people.');
     });
     $('#btnExport').addEventListener('click', exportCsv);
+    $('#btnXlsx').addEventListener('click', exportXlsx);
+    $('#setWatch').value = String(S.settings.watchMin);
+    $('#setWatch').addEventListener('change', (e) => { S.settings.watchMin = Number(e.target.value); save(); ['reg', 'bank'].forEach((k) => { scheduleWatch(k); renderWatch(k); }); });
+    ['reg', 'bank'].forEach(renderWatch);
     $('#btnClear').addEventListener('click', () => {
       if (!confirm('Delete all uploaded data, statuses and settings from this browser?')) return;
       try { localStorage.removeItem(LS_KEY); } catch (e) { /* ignore */ }
       S = defaults(); view.filter = 'ALL'; view.q = ''; view.open.clear(); $('#search').value = '';
+      view.fresh.clear(); ['reg', 'bank'].forEach((k) => stopWatch(k, true)); $('#setWatch').value = String(S.settings.watchMin);
       recompute(); renderAll(); toast('Everything cleared.');
     });
   }

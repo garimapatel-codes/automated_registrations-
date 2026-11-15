@@ -34,4 +34,7 @@ assert.strictEqual(by['Byte Brigade'].phone, '919845011111');
 assert.strictEqual(by['Null Pointers'].phone, '919845022222');
 assert.strictEqual(by['Byte Brigade'].bankMatches[0].rowNo, 7);
 assert.ok(!C.verify(reg, regMap, bank, bankMap, { fee: 8000, maxTeam: 5 }).results.some((r) => r.team === 'Stationery'), 'debit rows never match');
+const X = require('../js/xlsx.js');
+const bytes = X.build([{ name: 'T', header: true, rows: [['a', 'b'], ['x & <y>', 5]] }]);
+assert.strictEqual(String.fromCharCode(bytes[0], bytes[1]), 'PK', 'xlsx is a zip');
 console.log('All tests passed:', results.map((r) => r.team + '=' + r.status).join(', '));

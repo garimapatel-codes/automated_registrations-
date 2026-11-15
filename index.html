@@ -35,22 +35,37 @@
   <section class="card" aria-labelledby="h-upload">
     <h2 id="h-upload">1 · Upload the two CSV files</h2>
     <div class="drops">
+      <div class="dropwrap">
       <label class="drop" id="dropReg" tabindex="0">
         <input type="file" id="fileReg" accept=".csv,text/csv,text/plain" hidden>
         <strong>Registrations CSV</strong>
         <span class="hint">Google Form → Responses → “Download .csv”</span>
         <span class="fileinfo" id="infoReg">No file loaded — click or drop here</span>
       </label>
+      <div class="watch" data-kind="reg"></div>
+      </div>
+      <div class="dropwrap">
       <label class="drop" id="dropBank" tabindex="0">
         <input type="file" id="fileBank" accept=".csv,text/csv,text/plain" hidden>
         <strong>Bank statement CSV</strong>
         <span class="hint">Download from net-banking. Re-upload a fresher one any time.</span>
         <span class="fileinfo" id="infoBank">No file loaded — click or drop here</span>
       </label>
+      <div class="watch" data-kind="bank"></div>
+      </div>
     </div>
     <div class="actions-row">
       <button id="btnSample" class="btn small" type="button">Try with sample data</button>
       <label class="check"><input type="checkbox" id="chkRemember"> Remember files &amp; progress in this browser (localStorage)</label>
+    </div>
+    <div class="actions-row">
+      <label class="check">Auto re-check watched files every
+        <select id="setWatch" aria-label="Re-check interval">
+          <option value="1">1 minute</option><option value="5">5 minutes</option><option value="15">15 minutes</option>
+          <option value="30">30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option>
+          <option value="360">6 hours</option>
+        </select></label>
+      <span class="hint">“Watch” keeps this page re-reading the file you pick, so new registrations appear on their own. Needs Chrome or Edge, and this tab must stay open.</span>
     </div>
     <div id="loadMsg" class="msg" role="status"></div>
   </section>
@@ -106,7 +121,8 @@
       <input type="search" id="search" placeholder="Search team, leader, phone, UTR…" aria-label="Search">
       <button id="btnQueue" class="btn primary" type="button">Send to next verified leader ▶</button>
       <button id="btnCopyList" class="btn" type="button">Copy phones to approve</button>
-      <button id="btnExport" class="btn" type="button">Export results CSV</button>
+      <button id="btnXlsx" class="btn primary" type="button">⬇ Download final Excel report</button>
+      <button id="btnExport" class="btn" type="button">CSV</button>
     </div>
     <div id="queueInfo" class="msg" role="status"></div>
     <div class="tablewrap">
@@ -127,6 +143,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="js/core.js"></script>
+<script src="js/xlsx.js"></script>
 <script src="js/samples.js"></script>
 <script src="js/app.js"></script>
 </body>

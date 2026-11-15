@@ -107,3 +107,8 @@ tr.detail td { background: #f8f9fc; }
 
 @media (max-width: 700px) { .top, .stats { padding-left: .75rem; padding-right: .75rem; } }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+.dropwrap { display: flex; flex-direction: column; gap: .4rem; }
+.watch { display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: center; font-size: .85rem; }
+.watch .on { color: var(--ok); font-weight: 600; }
+.newtag { display: inline-block; background: #ffe08a; color: #5c4200; border-radius: 999px; padding: 0 .45rem; font-size: .72rem; font-weight: 700; margin-left: .4rem; }

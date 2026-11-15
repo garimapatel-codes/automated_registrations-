@@ -22,6 +22,23 @@ Double-click **`index.html`**. It runs in any modern browser, needs no install a
 5. *Send to next verified leader ▶* walks through verified, not-yet-invited leaders one click at a time.
 6. Tick **added** once the leader is in the group. Progress survives a page reload.
 
+## New registrations keep arriving? Use "Watch"
+Browsers can't read a path on their own, so you pick the file **once**:
+1. In step 1 click **👁 Watch a file on this computer…** under the registrations box (and/or the bank box) and choose the CSV.
+2. Choose how often to re-check (1 min … 6 hours). The page re-reads that same file on the timer and whenever you click **Check now**.
+3. If the file changed, new teams are tagged **NEW**, statuses refresh, and a message says how many were found. Invites sent / added / manual overrides are kept.
+
+Things to know:
+- Works in **Chrome or Edge** only (other browsers: re-upload manually). The tab must stay open and the PC awake.
+- The page can only see what is in the file. Google Forms doesn't update a downloaded CSV by itself: re-download and **overwrite the same file** (or save it under the same name) before the next check.
+- After closing or reloading the tab you must pick the file again (the browser forgets file access for safety). Your data and progress are still restored.
+
+## Closing the tab
+Nothing runs in the background and nothing is ever sent automatically. Checking is instant, and every invite is opened by your own click. Progress (sent / added / overrides) is saved in the browser the moment it changes, so closing the tab loses nothing. "Sent" means *you opened the chat*, so if you closed WhatsApp before pressing Send, untick "sent" on that row.
+
+## Final report (Excel)
+**⬇ Download final Excel report** produces `registration_report_<date>.xlsx` with four sheets: *Summary*, *All teams* (status, bank evidence, invite time, added), *Invited* (exactly who was sent the link and when) and *Needs action* (everyone not verified, with the reason). It is built inside the page, so nothing is uploaded. The CSV button gives the same "All teams" data as plain CSV.
+
 ## Statuses
 | Status | Meaning |
 |---|---|
@@ -40,7 +57,8 @@ WhatsApp has no single-use invite links, and a page that never contacts a server
 index.html        page + privacy policy (CSP)
 css/style.css
 js/core.js        CSV parsing + verification logic (no DOM; unit-tested)
-js/app.js         interface, localStorage, links
+js/app.js         interface, localStorage, links, file watching, report export
+js/xlsx.js        tiny offline .xlsx writer
 js/samples.js     fake demo data
 sample/           the same fake data as CSV files
 tests/test.js     run: node tests/test.js
@@ -51,3 +69,4 @@ tests/test.js     run: node tests/test.js
 - UTR typos stay *Pending*; fix the UTR in the CSV and re-upload (progress is kept per phone+UTR).
 - Phone numbers are assumed to be Indian (+91) unless you change the country code.
 - CSV only (export Excel statements as CSV first).
+- Watching a file needs Chrome/Edge and an open tab; there is no background service.
