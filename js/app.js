@@ -6,6 +6,7 @@
   'use strict';
   const C = window.Core;
   const LS_KEY = 'regverifier.v1';
+  const DEFAULT_MENTOR_TEMPLATE = 'Hello {mentor}, your team "{team}" (leader: {leader}) is registered for NACDeC-X ✅ Please join the group: {invite}';
   const DEFAULT_TEMPLATE = 'Hi {leader}, your team "{team}" is registered for NACDeC-X ✅ Please join the participants group: {invite}';
 
   const $ = (s, r) => (r || document).querySelector(s);
@@ -24,7 +25,7 @@
 
   // ---------------- state ----------------
   const defaults = () => ({
-    settings: { fee: 8000, maxTeam: 5, cc: '91', mode: 'invite', invite: '', template: DEFAULT_TEMPLATE, remember: true, watchMin: 15 },
+    settings: { fee: 8000, maxTeam: 5, cc: '91', mode: 'invite', invite: '', template: DEFAULT_TEMPLATE, mentors: true, mentorTemplate: DEFAULT_MENTOR_TEMPLATE, remember: true, watchMin: 15 },
     regText: '', regName: '', bankText: '', bankName: '',
     regMap: {}, bankMap: {}, bankHeaderRow: 0,
     flags: {}, // key -> { sent: ts|null, added: bool, override: 'verified'|'rejected'|null, note: '' }
@@ -102,25 +103,47 @@
   }
   const isOk = (r) => eff(r).code === 'VERIFIED';
   function setFlag(r, patch) { S.flags[r.key] = Object.assign({}, S.flags[r.key], patch); save(); render(); }
+  // Mentors are tracked per phone number, so a mentor guiding several teams is invited only once.
+  const mKey = (r) => 'M|' + r.mentorPhone;
+  const mflag = (r) => S.flags[mKey(r)] || {};
+  function setMFlag(r, patch) { S.flags[mKey(r)] = Object.assign({}, S.flags[mKey(r)], patch); save(); render(); }
+  const mentorOk = (r) => !!S.settings.mentors && isOk(r) && !!r.mentorPhone;
+  const fmtShort = (t) => new Date(t).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
 
   // ---------------- links ----------------
-  function messageFor(r) {
-    return (S.settings.template || DEFAULT_TEMPLATE)
-      .replace(/\{leader\}/g, r.leader || 'there').replace(/\{team\}/g, r.team || 'your team').replace(/\{invite\}/g, S.settings.invite || '');
+  function messageFor(r, who) {
+    const tpl = who === 'mentor' ? (S.settings.mentorTemplate || DEFAULT_MENTOR_TEMPLATE) : (S.settings.template || DEFAULT_TEMPLATE);
+    return tpl.replace(/\{leader\}/g, r.leader || 'the team leader').replace(/\{team\}/g, r.team || 'your team')
+      .replace(/\{mentor\}/g, r.mentorName || 'Sir/Madam').replace(/\{invite\}/g, S.settings.invite || '');
   }
-  function linkFor(r) {
-    if (!r.phone) return '';
-    return S.settings.mode === 'invite' ? 'https://wa.me/' + r.phone + '?text=' + encodeURIComponent(messageFor(r)) : 'https://wa.me/' + r.phone;
+  function linkFor(r, who) {
+    const ph = who === 'mentor' ? r.mentorPhone : r.phone;
+    if (!ph) return '';
+    return S.settings.mode === 'invite' ? 'https://wa.me/' + ph + '?text=' + encodeURIComponent(messageFor(r, who)) : 'https://wa.me/' + ph;
   }
   const inviteMissing = () => S.settings.mode === 'invite' && !/^https:\/\/chat\.whatsapp\.com\/\S+/.test(S.settings.invite.trim());
 
-  function openChat(r) {
-    if (!isOk(r) || !r.phone) return;
+  function openChat(r, who) {
+    who = who || 'leader';
+    const mentor = who === 'mentor';
+    if (mentor ? !mentorOk(r) : !(isOk(r) && r.phone)) return;
     if (inviteMissing()) { toast('Paste the WhatsApp group invite link in step 3 first.'); return; }
-    if (flag(r).sent && !confirm('An invite was already marked as sent to ' + (r.leader || r.team) + '. Send again?')) return;
-    window.open(linkFor(r), '_blank', 'noopener,noreferrer');
-    setFlag(r, { sent: Date.now() });
+    const f = mentor ? mflag(r) : flag(r);
+    const who2 = mentor ? 'mentor ' + (r.mentorName || r.mentorPhone) : (r.leader || r.team);
+    if (f.sent && !confirm('An invite was already marked as sent to ' + who2 + '. Send again?')) return;
+    window.open(linkFor(r, who), '_blank', 'noopener,noreferrer');
+    (mentor ? setMFlag : setFlag)(r, { sent: Date.now() });
   }
+  /** Everyone still to be invited, in table order: leader first, then that team's mentor (each mentor once). */
+  function pendingContacts() {
+    const out = [], seen = new Set();
+    for (const r of model.results) {
+      if (isOk(r) && r.phone && !flag(r).sent) out.push({ r, who: 'leader' });
+      if (mentorOk(r) && !mflag(r).sent && !seen.has(r.mentorPhone)) { seen.add(r.mentorPhone); out.push({ r, who: 'mentor' }); }
+    }
+    return out;
+  }
+  const uniqueMentors = (pred) => { const m = new Map(); model.results.forEach((r) => { if (mentorOk(r) && pred(r) && !m.has(r.mentorPhone)) m.set(r.mentorPhone, r); }); return [...m.values()]; };
 
   // ---------------- rendering ----------------
   function render() { renderUploads(); renderStats(); renderTable(); }
@@ -143,6 +166,7 @@
   function renderSettings() {
     const s = S.settings;
     $('#setFee').value = s.fee; $('#setMax').value = s.maxTeam; $('#setCC').value = s.cc;
+    $('#chkMentors').checked = !!s.mentors; $('#setMentorTemplate').value = s.mentorTemplate;
     $('#setInvite').value = s.invite; $('#setTemplate').value = s.template; $('#chkRemember').checked = !!s.remember;
     document.querySelectorAll('input[name=mode]').forEach((i) => { i.checked = i.value === s.mode; });
   }
@@ -160,7 +184,8 @@
     if (!model.regT) mr.append(h('span', { class: 'muted' }, 'Upload the registrations file first.'));
     else {
       const f = [['team', 'Team name', 1], ['leader', 'Leader name', 1], ['phone', 'Leader WhatsApp no. *', 0], ['email', 'Leader email', 1], ['utr', 'UTR / transaction ID *', 0],
-        ['institution', 'Institution', 1], ['city', 'City', 1], ['proof', 'Payment proof link', 1]];
+        ['institution', 'Institution', 1], ['city', 'City', 1], ['proof', 'Payment proof link', 1],
+        ['mentorName', 'Mentor name', 1], ['mentorPhone', 'Mentor WhatsApp no.', 1], ['mentorEmail', 'Mentor email', 1]];
       f.forEach(([k, label, opt]) => {
         mr.append(h('label', {}, label), select(model.regT.headers, S.regMap[k], (v) => { S.regMap[k] = v; save(); recompute(); render(); }, !!opt));
       });
@@ -203,14 +228,16 @@
       ['SENT', '✉️ Invite sent', n((r) => flag(r).sent), 'info'],
       ['ADDED', '👥 Added to group', n((r) => flag(r).added), 'info'],
     ];
+    if (S.settings.mentors) items.push(['MTODO', '🎓 Mentors to invite', uniqueMentors((r) => !mflag(r).sent).length, 'info']);
     const bar = $('#statsBar'); bar.replaceChildren();
     items.forEach(([k, label, count, cls]) => bar.append(h('button', {
       class: 'chip ' + cls, type: 'button', 'aria-pressed': String(view.filter === k),
       onclick: () => { view.filter = k; render(); },
     }, label, h('b', {}, count))));
-    const q = $('#btnQueue'), left = n((r) => isOk(r) && r.phone && !flag(r).sent);
+    const q = $('#btnQueue'), pend = pendingContacts(), left = pend.length;
     q.disabled = left === 0;
-    q.textContent = left ? 'Send to next verified leader ▶ (' + left + ' left)' : 'No verified leaders waiting';
+    q.textContent = left ? 'Send to next verified contact ▶ (' + left + ' left)' : 'No verified contacts waiting';
+    q.title = left ? 'Next: ' + (pend[0].who === 'mentor' ? 'mentor of ' : 'leader of ') + (pend[0].r.team || 'team') : '';
     const qi = $('#queueInfo');
     qi.className = 'msg';
     if (inviteMissing()) { qi.classList.add('warn'); qi.textContent = 'Invite-message mode is on but no valid group invite link is set (step 3). Buttons stay disabled until you add it.'; }
@@ -220,11 +247,12 @@
   function matches(r) {
     const c = eff(r).code, f = flag(r), F = view.filter;
     const okFilter = F === 'ALL' || (F === 'ATTN' ? ['DUPLICATE', 'REVIEW', 'REJECTED'].includes(c)
-      : F === 'TODO' ? c === 'VERIFIED' && !f.sent : F === 'SENT' ? !!f.sent : F === 'ADDED' ? !!f.added : c === F);
+      : F === 'TODO' ? c === 'VERIFIED' && !f.sent : F === 'SENT' ? !!f.sent : F === 'ADDED' ? !!f.added
+        : F === 'MTODO' ? mentorOk(r) && !mflag(r).sent : c === F);
     if (!okFilter) return false;
     const q = view.q.trim().toLowerCase();
     if (!q) return true;
-    return [r.team, r.leader, r.phoneRaw, r.phone, r.utrRaw, r.utr, r.email, r.institution, r.city].join(' ').toLowerCase().includes(q);
+    return [r.team, r.leader, r.phoneRaw, r.phone, r.utrRaw, r.utr, r.email, r.institution, r.city, r.mentorName].join(' ').toLowerCase().includes(q);
   }
 
   function badge(r) {
@@ -246,6 +274,7 @@
       r.email ? h('div', {}, 'Email: ', r.email) : null,
       r.institution || r.city ? h('div', {}, 'Institution: ', [r.institution, r.city].filter(Boolean).join(', ')) : null,
       r.members ? h('div', {}, 'Members (' + r.teamSize + '): ', r.members) : null,
+      r.mentorName || r.mentorPhoneRaw ? h('div', {}, 'Faculty mentor: ', [r.mentorName, r.mentorPhone ? '+' + r.mentorPhone : (r.mentorPhoneRaw ? '(invalid number: ' + r.mentorPhoneRaw + ')' : '')].filter(Boolean).join(' · ')) : null,
       r.proof ? h('div', {}, 'Payment proof: ', h('a', { href: r.proof, target: '_blank', rel: 'noopener noreferrer' }, 'open in Drive ↗')) : null);
     const bankBox = h('div', { class: 'box' });
     if (!r.bankMatches.length) bankBox.append('No matching credit in the bank file.');
@@ -259,7 +288,8 @@
         h('div', {}, h('h4', {}, 'Why this status'), h('div', { class: 'box' }, r.reason || '—')),
         h('div', {}, h('h4', {}, 'Registration data'), reg),
         h('div', {}, h('h4', {}, 'Bank evidence'), bankBox)),
-      link ? h('div', { class: 'linkline' }, 'wa.me link: ', h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', class: 'mono' }, link)) : null,
+      link ? h('div', { class: 'linkline' }, 'Leader wa.me link: ', h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', class: 'mono' }, link)) : null,
+      mentorOk(r) ? h('div', { class: 'linkline' }, 'Mentor wa.me link: ', h('a', { href: linkFor(r, 'mentor'), target: '_blank', rel: 'noopener noreferrer', class: 'mono' }, linkFor(r, 'mentor'))) : null,
       h('div', { class: 'override' },
         h('button', { class: 'btn small', type: 'button', onclick: () => { if (confirm('Mark this team as verified manually, without a matching bank payment?')) setFlag(r, { override: 'verified' }); } }, 'Mark verified manually'),
         h('button', { class: 'btn small', type: 'button', onclick: () => setFlag(r, { override: 'rejected' }) }, 'Reject'),
@@ -274,9 +304,15 @@
     $('#emptyMsg').textContent = model.results.length ? 'No teams match this filter.' : 'Upload the registrations CSV to see teams here.';
     rows.forEach((r, i) => {
       const f = flag(r), ok = isOk(r), open = view.open.has(r.key);
+      const mf = mflag(r), showMentor = mentorOk(r);
+      const mentorBox = showMentor ? h('div', { class: 'mentorbox' },
+        h('div', { class: 'small muted' }, '🎓 Mentor: ' + (r.mentorName || '—') + ' · +' + r.mentorPhone),
+        h('button', { class: 'btn small', type: 'button', disabled: inviteMissing(), onclick: () => openChat(r, 'mentor') }, mf.sent ? 'Resend to mentor' : (S.settings.mode === 'invite' ? 'Invite mentor' : 'Open mentor chat')),
+        h('div', { class: 'small' }, h('label', {}, h('input', { type: 'checkbox', checked: !!mf.sent, onchange: (e) => setMFlag(r, { sent: e.target.checked ? Date.now() : null }) }), ' sent', mf.sent ? ' ' + fmtShort(mf.sent) : ''))) : null;
       const sentCell = h('td', {},
         ok && r.phone ? h('button', { class: 'btn small primary', type: 'button', disabled: inviteMissing(), onclick: () => openChat(r) }, f.sent ? 'Resend' : (S.settings.mode === 'invite' ? 'Send invite' : 'Open chat')) : null,
-        h('div', { class: 'small' }, h('label', {}, h('input', { type: 'checkbox', checked: !!f.sent, disabled: !ok && !f.sent, onchange: (e) => setFlag(r, { sent: e.target.checked ? Date.now() : null }) }), ' sent', f.sent ? ' ' + new Date(f.sent).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '')));
+        h('div', { class: 'small' }, h('label', {}, h('input', { type: 'checkbox', checked: !!f.sent, disabled: !ok && !f.sent, onchange: (e) => setFlag(r, { sent: e.target.checked ? Date.now() : null }) }), ' sent', f.sent ? ' ' + fmtShort(f.sent) : '')),
+        mentorBox);
       body.append(h('tr', { class: 'main' },
         h('td', {}, r.rowNo),
         h('td', {}, h('div', { class: 'team' }, r.team || '(no team name)', view.fresh.has(r.key) ? h('span', { class: 'newtag' }, 'NEW') : null), h('div', {}, r.leader || '—')),
@@ -286,7 +322,8 @@
         h('td', {}, badge(r), h('div', { class: 'reason' }, r.reason),
           h('button', { class: 'toggle', type: 'button', 'aria-expanded': String(open), onclick: () => { open ? view.open.delete(r.key) : view.open.add(r.key); renderTable(); } }, open ? 'Hide evidence ▲' : 'Show evidence ▼')),
         sentCell,
-        h('td', {}, h('label', {}, h('input', { type: 'checkbox', checked: !!f.added, disabled: !ok && !f.added, onchange: (e) => setFlag(r, { added: e.target.checked }) }), ' added')),
+        h('td', {}, h('label', {}, h('input', { type: 'checkbox', checked: !!f.added, disabled: !ok && !f.added, onchange: (e) => setFlag(r, { added: e.target.checked }) }), ' leader added'),
+          showMentor ? h('div', { class: 'mentorbox' }, h('label', {}, h('input', { type: 'checkbox', checked: !!mf.added, onchange: (e) => setMFlag(r, { added: e.target.checked }) }), ' mentor added')) : null),
         h('td', {}, f.note ? h('span', { class: 'small muted' }, '📝 ' + f.note) : null)));
       if (open) body.append(detailRow(r));
     });
@@ -420,10 +457,21 @@
       ['Invites sent', n((r) => flag(r).sent)],
       ['Added to group', n((r) => flag(r).added)],
       ['Verified but not yet invited', n((r) => isOk(r) && !flag(r).sent)],
+      ['Faculty mentors invited', uniqueMentors((r) => mflag(r).sent).length],
+      ['Faculty mentors still to invite', uniqueMentors((r) => !mflag(r).sent).length],
     ];
     summary[0].bold = true;
-    const all = [['#', 'Team', 'Institution', 'City', 'Leader', 'Phone', 'Team size', 'UTR', 'Paid (₹)', 'Status', 'Reason', 'Invite sent at', 'Added to group', 'Bank evidence', 'Payment proof', 'Note']];
-    rs.forEach((r) => all.push([r.rowNo, r.team, r.institution, r.city, r.leader, r.phone ? '+' + r.phone : '', r.teamSize || '', r.utr, r.paid || '', st(r), r.reason, fmtTime(flag(r).sent), flag(r).added ? 'Yes' : '', ev(r), r.proof, flag(r).note || '']));
+    const all = [['#', 'Team', 'Institution', 'City', 'Leader', 'Phone', 'Team size', 'UTR', 'Paid (₹)', 'Status', 'Reason', 'Invite sent at', 'Added to group', 'Bank evidence', 'Payment proof', 'Mentor', 'Mentor phone', 'Mentor invite sent at', 'Note']];
+    rs.forEach((r) => all.push([r.rowNo, r.team, r.institution, r.city, r.leader, r.phone ? '+' + r.phone : '', r.teamSize || '', r.utr, r.paid || '', st(r), r.reason, fmtTime(flag(r).sent), flag(r).added ? 'Yes' : '', ev(r), r.proof, r.mentorName, r.mentorPhone ? '+' + r.mentorPhone : '', r.mentorPhone ? fmtTime(mflag(r).sent) : '', flag(r).note || '']));
+    const mentorsMap = new Map();
+    rs.forEach((r) => {
+      if (!r.mentorPhone) return;
+      const m = mentorsMap.get(r.mentorPhone) || { r, teams: [], eligible: false };
+      m.teams.push(r.team + (isOk(r) ? '' : ' (not verified)')); m.eligible = m.eligible || isOk(r);
+      mentorsMap.set(r.mentorPhone, m);
+    });
+    const mentors = [['Mentor', 'Phone', 'Email', 'Institution', 'Teams', 'Eligible (a team is verified)', 'Invite sent at', 'Added to group']];
+    mentorsMap.forEach((m, ph) => mentors.push([m.r.mentorName, '+' + ph, m.r.mentorEmail, m.r.institution, m.teams.join('; '), m.eligible ? 'Yes' : 'No', fmtTime(S.flags['M|' + ph] && S.flags['M|' + ph].sent), S.flags['M|' + ph] && S.flags['M|' + ph].added ? 'Yes' : '']));
     const invited = [['Team', 'Institution', 'Leader', 'Phone', 'Invite sent at', 'Added to group', 'Paid (₹)']];
     rs.filter((r) => flag(r).sent).sort((a, b) => flag(a).sent - flag(b).sent)
       .forEach((r) => invited.push([r.team, r.institution, r.leader, r.phone ? '+' + r.phone : '', fmtTime(flag(r).sent), flag(r).added ? 'Yes' : 'No', r.paid || '']));
@@ -433,6 +481,7 @@
       { name: 'Summary', rows: summary, widths: [38, 34] },
       { name: 'All teams', rows: all, header: true },
       { name: 'Invited', rows: invited, header: true },
+      { name: 'Mentors', rows: mentors, header: true },
       { name: 'Needs action', rows: todo, header: true },
     ]);
     const a = h('a', { href: URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })), download: 'registration_report_' + new Date().toISOString().slice(0, 10) + '.xlsx' });
@@ -448,6 +497,8 @@
     bindNum('#setFee', 'fee'); bindNum('#setMax', 'maxTeam'); bindNum('#setCC', 'cc');
     $('#setInvite').addEventListener('input', (e) => { S.settings.invite = e.target.value; save(); render(); });
     $('#setTemplate').addEventListener('input', (e) => { S.settings.template = e.target.value; save(); });
+    $('#setMentorTemplate').addEventListener('input', (e) => { S.settings.mentorTemplate = e.target.value; save(); });
+    $('#chkMentors').addEventListener('change', (e) => { S.settings.mentors = e.target.checked; if (!e.target.checked && view.filter === 'MTODO') view.filter = 'ALL'; save(); render(); });
     document.querySelectorAll('input[name=mode]').forEach((i) => i.addEventListener('change', () => { if (i.checked) { S.settings.mode = i.value; save(); render(); } }));
     $('#chkRemember').addEventListener('change', (e) => {
       S.settings.remember = e.target.checked;
@@ -458,20 +509,23 @@
 
     $('#btnSample').addEventListener('click', () => {
       S.regText = window.SAMPLES.reg; S.regName = 'nacdec_form_responses_sample.csv'; S.regMap = {};
-      S.bankText = window.SAMPLES.bank; S.bankName = 'sample_bank_statement.csv'; S.bankMap = {}; S.bankHeaderRow = 0;
+      S.bankText = window.SAMPLES.bank; S.bankName = 'nacdec_bank_statement_sample.csv'; S.bankMap = {}; S.bankHeaderRow = 0;
       S.flags = {}; save(); recompute(); renderAll(); toast('Sample (fake) data loaded.');
     });
     $('#btnQueue').addEventListener('click', () => {
-      const next = model.results.find((r) => isOk(r) && r.phone && !flag(r).sent);
+      const next = pendingContacts()[0];
       if (!next) return;
       if (inviteMissing()) { toast('Paste the WhatsApp group invite link in step 3 first.'); return; }
-      window.open(linkFor(next), '_blank', 'noopener,noreferrer');
-      setFlag(next, { sent: Date.now() });
-      toast('Opened chat for ' + (next.leader || next.team) + '. Press Send in WhatsApp, then click again for the next one.');
+      const mentor = next.who === 'mentor';
+      window.open(linkFor(next.r, next.who), '_blank', 'noopener,noreferrer');
+      (mentor ? setMFlag : setFlag)(next.r, { sent: Date.now() });
+      toast('Opened chat for ' + (mentor ? 'mentor ' + (next.r.mentorName || '') + ' (' + next.r.team + ')' : (next.r.leader || next.r.team)) + '. Press Send in WhatsApp, then click again for the next one.');
     });
     $('#btnCopyList').addEventListener('click', () => {
-      const list = model.results.filter((r) => isOk(r) && !flag(r).added)
-        .map((r) => '+' + r.phone + '\t' + (r.leader || '') + '\t' + (r.team || '')).join('\n');
+      const lines = model.results.filter((r) => isOk(r) && !flag(r).added)
+        .map((r) => '+' + r.phone + '\t' + (r.leader || '') + '\t' + (r.team || '') + '\tLeader');
+      uniqueMentors((r) => !mflag(r).added).forEach((r) => lines.push('+' + r.mentorPhone + '\t' + (r.mentorName || '') + '\t' + (r.team || '') + '\tMentor'));
+      const list = lines.join('\n');
       if (!list) { toast('Nobody verified is waiting to be added.'); return; }
       copyText(list); toast('Copied. Use it to approve join requests / add people.');
     });

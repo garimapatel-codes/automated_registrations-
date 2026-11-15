@@ -93,6 +93,9 @@
       institution: firstMatch(headers, /institution|college|university|organi[sz]ation/i, /city/i),
       city: firstMatch(headers, /city|town|location/i),
       proof: firstMatch(headers, /payment.*(proof|screenshot|receipt)|proof|screenshot|receipt/i),
+      mentorName: firstMatch(headers, /(mentor|faculty|guide).*name/i),
+      mentorPhone: firstMatch(headers, /(mentor|faculty|guide).*(whats?app|phone|mobile|contact)/i),
+      mentorEmail: firstMatch(headers, /(mentor|faculty|guide).*e-?mail/i),
     };
   }
 
@@ -176,6 +179,7 @@
       team: ci(regMap.team), leader: ci(regMap.leader), phone: ci(regMap.phone),
       email: ci(regMap.email), utr: ci(regMap.utr),
       institution: ci(regMap.institution), city: ci(regMap.city), proof: ci(regMap.proof),
+      mentorName: ci(regMap.mentorName), mentorPhone: ci(regMap.mentorPhone), mentorEmail: ci(regMap.mentorEmail),
     };
     const memCols = (Array.isArray(regMap.members) ? regMap.members : regMap.members ? [regMap.members] : []).map(ci).filter((i) => i >= 0);
     if (c.utr < 0) return { error: 'Choose the UTR / transaction-ID column for the registration file.', results: [] };
@@ -205,6 +209,8 @@
         team: get(r.cells, c.team), leader: get(r.cells, c.leader), phone,
         phoneRaw: get(r.cells, c.phone), email: get(r.cells, c.email),
         institution: get(r.cells, c.institution), city: get(r.cells, c.city),
+        mentorName: get(r.cells, c.mentorName), mentorEmail: get(r.cells, c.mentorEmail),
+        mentorPhoneRaw: get(r.cells, c.mentorPhone), mentorPhone: normPhone(get(r.cells, c.mentorPhone), cc),
         proof: (String(get(r.cells, c.proof)).match(/https?:\/\/[^\s,;]+/) || [''])[0],
         utr, utrRaw: get(r.cells, c.utr), members: membersRaw, teamSize,
         status: '', reason: '', paid: 0, matchType: 'none', bankMatches: [],

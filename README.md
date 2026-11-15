@@ -42,6 +42,9 @@ Nothing runs in the background and nothing is ever sent automatically. Checking 
 ## Final report (Excel)
 **⬇ Download final Excel report** produces `registration_report_<date>.xlsx` with four sheets: *Summary*, *All teams* (status, bank evidence, invite time, added), *Invited* (exactly who was sent the link and when) and *Needs action* (everyone not verified, with the reason). It is built inside the page, so nothing is uploaded. The CSV button gives the same "All teams" data as plain CSV.
 
+## Works with the NACDeC-X form layout
+Columns are auto-detected: leader = *Team Member 1* (name, WhatsApp number, email), UTR = *Enter Transaction ID*, team size = number of filled *Team Member N: Name* columns, plus institution, city and the payment-proof Drive link (shown as "open in Drive" in the evidence panel, handy when a UTR is Pending). Typed prefixes such as "UTR No:" are ignored when matching.
+
 ## Statuses
 | Status | Meaning |
 |---|---|
@@ -63,7 +66,7 @@ js/core.js        CSV parsing + verification logic (no DOM; unit-tested)
 js/app.js         interface, localStorage, links, file watching, report export
 js/xlsx.js        tiny offline .xlsx writer
 js/samples.js     fake demo data
-sample/           the same fake data as CSV files
+sample/           fake data in the NACDeC-X form's exact column layout (registrations + bank statement)
 tests/test.js     run: node tests/test.js
 ```
 

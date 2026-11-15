@@ -1,2 +1,3 @@
 *.csv
 !sample/*.csv
+sample/sample_bank_statement.csv

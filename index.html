@@ -110,6 +110,10 @@
         <label class="block">Message template <span class="muted">(use {leader} {team} {invite})</span>
           <textarea id="setTemplate" rows="3"></textarea>
         </label>
+        <label class="check mentorcheck"><input type="checkbox" id="chkMentors"> Also invite each team's <strong>faculty mentor</strong> (once per mentor, even if they guide several teams)</label>
+        <label class="block">Message template for mentors <span class="muted">(use {mentor} {leader} {team} {invite})</span>
+          <textarea id="setMentorTemplate" rows="3"></textarea>
+        </label>
         <p class="note"><strong>About “one-time” links:</strong> WhatsApp does not offer single-use invite links, and a page that never touches the network can’t create them. To get the same effect, turn on <em>Approve new participants</em> in the group settings: anyone who taps the link only <em>requests</em> to join, and you approve only the people shown as <strong>Verified</strong> here. This app also records each invite as <em>sent</em> once, and asks before you send a second time.</p>
       </div>
     </details>
@@ -119,7 +123,7 @@
     <h2 id="h-results">4 · Teams</h2>
     <div class="toolbar">
       <input type="search" id="search" placeholder="Search team, leader, phone, UTR…" aria-label="Search">
-      <button id="btnQueue" class="btn primary" type="button">Send to next verified leader ▶</button>
+      <button id="btnQueue" class="btn primary" type="button">Send to next verified contact ▶</button>
       <button id="btnCopyList" class="btn" type="button">Copy phones to approve</button>
       <button id="btnXlsx" class="btn primary" type="button">⬇ Download final Excel report</button>
       <button id="btnExport" class="btn" type="button">CSV</button>

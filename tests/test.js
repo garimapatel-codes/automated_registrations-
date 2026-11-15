@@ -5,7 +5,7 @@ const rd = (f) => fs.readFileSync(path.join(__dirname, '../sample', f), 'utf8');
 
 const regRows = C.parseCSV(rd('nacdec_form_responses_sample.csv'));
 const reg = C.toTable(regRows, 0);
-const bankRows = C.parseCSV(rd('sample_bank_statement.csv'));
+const bankRows = C.parseCSV(rd('nacdec_bank_statement_sample.csv'));
 const bank = C.toTable(bankRows, C.findBankHeader(bankRows));
 assert.deepStrictEqual(bank.headers.slice(0, 3), ['Txn Date', 'Value Date', 'Description'], 'bank header row detected below preamble');
 
@@ -41,10 +41,16 @@ assert.strictEqual(by['Team Astra'].phone, '919845011111');
 assert.strictEqual(by['Team Vyom'].phone, '919845022222');
 assert.strictEqual(by['Team Astra'].institution, 'Sample Institute of Technology');
 assert.strictEqual(by['Team Astra'].proof, 'https://drive.google.com/open?id=PROOF_001');
-assert.strictEqual(by['Team Astra'].bankMatches[0].rowNo, 7);
+assert.strictEqual(by['Team Astra'].bankMatches[0].rowNo, 13);
 // a quoted header containing newlines and doubled quotes must survive parsing
 assert.ok(reg.headers.some((h) => h.includes('Self Motivation') && h.includes('"None"')), 'quoted header parsed');
 assert.ok(reg.headers.some((h) => h.startsWith('Duly signed') && h.includes('\n')), 'multi-line header parsed');
+// faculty mentor columns
+assert.strictEqual(regMap.mentorName, 'Faculty Mentor: Name');
+assert.strictEqual(regMap.mentorPhone, 'Faculty Mentor: Contact Number (WhatsApp enabled)');
+assert.strictEqual(by['Team Astra'].mentorName, 'Dr. Mohan Das');
+assert.strictEqual(by['Team Astra'].mentorPhone, '919845000001');
+assert.strictEqual(by['Team Gagan'].mentorPhone, by['Team Nabh'].mentorPhone, 'one mentor, two teams');
 const X = require('../js/xlsx.js');
 const bytes = X.build([{ name: 'T', header: true, rows: [['a', 'b'], ['x & <y>', 5]] }]);
 assert.strictEqual(String.fromCharCode(bytes[0], bytes[1]), 'PK', 'xlsx is a zip');
