@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Privacy lock: the browser will refuse ANY network request from this page
+  (fetch, XHR, WebSocket, beacons, images, fonts, iframes, forms).
+  Data you load never leaves this device.
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="connect-src 'none'; img-src data:; font-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Registration Verifier — local only</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <h1>Registration Verifier</h1>
+    <p class="sub">Match form registrations to bank payments, then invite verified team leaders on WhatsApp.</p>
+  </div>
+  <div class="privacy" role="note">
+    <span class="lock" aria-hidden="true">🔒</span>
+    <span><strong>100% local.</strong> No server, no uploads, network requests are blocked. Data lives only in this browser.</span>
+    <button id="btnClear" class="btn danger small" type="button">Clear all data</button>
+  </div>
+</header>
+
+<!-- Always-visible status bar -->
+<nav id="statsBar" class="stats" aria-label="Status summary and filters"></nav>
+
+<main>
+  <section class="card" aria-labelledby="h-upload">
+    <h2 id="h-upload">1 · Upload the two CSV files</h2>
+    <div class="drops">
+      <label class="drop" id="dropReg" tabindex="0">
+        <input type="file" id="fileReg" accept=".csv,text/csv,text/plain" hidden>
+        <strong>Registrations CSV</strong>
+        <span class="hint">Google Form → Responses → “Download .csv”</span>
+        <span class="fileinfo" id="infoReg">No file loaded — click or drop here</span>
+      </label>
+      <label class="drop" id="dropBank" tabindex="0">
+        <input type="file" id="fileBank" accept=".csv,text/csv,text/plain" hidden>
+        <strong>Bank statement CSV</strong>
+        <span class="hint">Download from net-banking. Re-upload a fresher one any time.</span>
+        <span class="fileinfo" id="infoBank">No file loaded — click or drop here</span>
+      </label>
+    </div>
+    <div class="actions-row">
+      <button id="btnSample" class="btn small" type="button">Try with sample data</button>
+      <label class="check"><input type="checkbox" id="chkRemember"> Remember files &amp; progress in this browser (localStorage)</label>
+    </div>
+    <div id="loadMsg" class="msg" role="status"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-map">
+    <details id="mapDetails" open>
+      <summary><h2 id="h-map">2 · Check column mapping <span class="muted">(auto-detected — fix if wrong)</span></h2></summary>
+      <div class="two">
+        <div>
+          <h3>Registrations file</h3>
+          <div id="mapReg" class="mapgrid"></div>
+        </div>
+        <div>
+          <h3>Bank file</h3>
+          <div id="mapBank" class="mapgrid"></div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="card" aria-labelledby="h-settings">
+    <details id="setDetails" open>
+      <summary><h2 id="h-settings">3 · Rules &amp; invite options</h2></summary>
+      <div class="settings">
+        <label>Fee per team (₹) <input type="number" id="setFee" min="0" step="1"></label>
+        <label>Max members per team <input type="number" id="setMax" min="0" step="1"></label>
+        <label>Country code <input type="text" id="setCC" size="4" maxlength="4"></label>
+      </div>
+
+      <fieldset class="modes">
+        <legend>What should the action button give you?</legend>
+        <label class="mode"><input type="radio" name="mode" value="link">
+          <span><strong>wa.me link only</strong><br><span class="muted">Opens a blank chat with the leader. You type or paste the invite yourself.</span></span></label>
+        <label class="mode"><input type="radio" name="mode" value="invite">
+          <span><strong>Ready-to-send invite message</strong><br><span class="muted">Opens the chat with your message and the group invite link already filled in. You just press Send.</span></span></label>
+      </fieldset>
+
+      <div id="inviteBox">
+        <label class="block">WhatsApp group invite link
+          <input type="text" id="setInvite" placeholder="https://chat.whatsapp.com/XXXXXXXXXXXX" autocomplete="off">
+        </label>
+        <label class="block">Message template <span class="muted">(use {leader} {team} {invite})</span>
+          <textarea id="setTemplate" rows="3"></textarea>
+        </label>
+        <p class="note"><strong>About “one-time” links:</strong> WhatsApp does not offer single-use invite links, and a page that never touches the network can’t create them. To get the same effect, turn on <em>Approve new participants</em> in the group settings: anyone who taps the link only <em>requests</em> to join, and you approve only the people shown as <strong>Verified</strong> here. This app also records each invite as <em>sent</em> once, and asks before you send a second time.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="card" aria-labelledby="h-results">
+    <h2 id="h-results">4 · Teams</h2>
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Search team, leader, phone, UTR…" aria-label="Search">
+      <button id="btnQueue" class="btn primary" type="button">Send to next verified leader ▶</button>
+      <button id="btnCopyList" class="btn" type="button">Copy phones to approve</button>
+      <button id="btnExport" class="btn" type="button">Export results CSV</button>
+    </div>
+    <div id="queueInfo" class="msg" role="status"></div>
+    <div class="tablewrap">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>#</th><th>Team / Leader</th><th>Phone</th><th>UTR</th><th class="num">Paid</th>
+            <th>Status</th><th>Invite</th><th>Added</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <p id="emptyMsg" class="empty">Upload the registrations CSV to see teams here.</p>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="js/core.js"></script>
+<script src="js/samples.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
