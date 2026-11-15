@@ -81,13 +81,18 @@
   };
 
   function guessReg(headers) {
+    const memberNames = headers.filter((h) => /member\s*\d+\s*[:\-]?\s*name/i.test(h));
+    const single = firstMatch(headers, /members?/i, /count|size|number of|\d/i);
     return {
       team: firstMatch(headers, /team/i, /member|size|count|leader|lead/i) || firstMatch(headers, /team/i),
-      leader: firstMatch(headers, /leader|lead name|full name|your name|^name$/i),
-      phone: firstMatch(headers, /whats?app|phone|mobile|contact/i),
-      email: firstMatch(headers, /e-?mail/i),
+      leader: firstMatch(headers, /member\s*1.*name|leader|lead name|full name|your name|^name$/i),
+      phone: firstMatch(headers, /(member\s*1|leader).*(whats?app|phone|mobile|contact)/i) || firstMatch(headers, /whats?app|phone|mobile|contact/i),
+      email: firstMatch(headers, /(member\s*1|leader).*e-?mail/i) || firstMatch(headers, /e-?mail/i),
       utr: firstMatch(headers, /utr|transaction|txn|upi ?ref|reference/i),
-      members: firstMatch(headers, /members?/i, /count|size|number of/i),
+      members: memberNames.length ? memberNames : (single ? [single] : []),
+      institution: firstMatch(headers, /institution|college|university|organi[sz]ation/i, /city/i),
+      city: firstMatch(headers, /city|town|location/i),
+      proof: firstMatch(headers, /payment.*(proof|screenshot|receipt)|proof|screenshot|receipt/i),
     };
   }
 
@@ -101,7 +106,8 @@
   }
 
   // ---------- normalisers ----------
-  const normUtr = (v) => String(v || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().replace(/^UTR(?=\d)/, '');
+  const normUtr = (v) => String(v || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+    .replace(/^(?:UTRNO|UTRNUMBER|UTR|TXNID|TXNNO|TXN|TRANSACTIONID|TRANSACTIONNO|TRANSACTION|REFNO|REFERENCENO|REF|NO|ID)+(?=\d)/, '');
 
   function normPhone(v, cc) {
     const d = String(v || '').replace(/\D/g, '');
@@ -168,8 +174,10 @@
     const ci = (n) => (n ? reg.headers.indexOf(n) : -1);
     const c = {
       team: ci(regMap.team), leader: ci(regMap.leader), phone: ci(regMap.phone),
-      email: ci(regMap.email), utr: ci(regMap.utr), members: ci(regMap.members),
+      email: ci(regMap.email), utr: ci(regMap.utr),
+      institution: ci(regMap.institution), city: ci(regMap.city), proof: ci(regMap.proof),
     };
+    const memCols = (Array.isArray(regMap.members) ? regMap.members : regMap.members ? [regMap.members] : []).map(ci).filter((i) => i >= 0);
     if (c.utr < 0) return { error: 'Choose the UTR / transaction-ID column for the registration file.', results: [] };
     if (c.phone < 0) return { error: 'Choose the leader WhatsApp-number column for the registration file.', results: [] };
 
@@ -187,13 +195,17 @@
     const results = reg.rows.map((r) => {
       const utr = normUtr(get(r.cells, c.utr));
       const phone = normPhone(get(r.cells, c.phone), cc);
-      const membersRaw = get(r.cells, c.members);
-      const teamSize = c.members >= 0 ? countMembers(membersRaw) : 0;
+      // several "Member N: Name" columns -> count non-empty ones; a single list cell -> split it
+      const memCells = memCols.map((i) => get(r.cells, i)).filter((v) => String(v).trim() !== '');
+      const teamSize = memCols.length > 1 ? memCells.length : memCols.length === 1 ? countMembers(memCells[0]) : 0;
+      const membersRaw = memCells.join(', ');
       const out = {
         rowNo: r.rowNo,
         key: (phone || 'nophone') + '|' + (utr || 'noutr') + '|' + r.rowNo,
         team: get(r.cells, c.team), leader: get(r.cells, c.leader), phone,
         phoneRaw: get(r.cells, c.phone), email: get(r.cells, c.email),
+        institution: get(r.cells, c.institution), city: get(r.cells, c.city),
+        proof: (String(get(r.cells, c.proof)).match(/https?:\/\/[^\s,;]+/) || [''])[0],
         utr, utrRaw: get(r.cells, c.utr), members: membersRaw, teamSize,
         status: '', reason: '', paid: 0, matchType: 'none', bankMatches: [],
       };

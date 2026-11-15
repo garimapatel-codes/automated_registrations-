@@ -112,3 +112,11 @@ tr.detail td { background: #f8f9fc; }
 .watch { display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: center; font-size: .85rem; }
 .watch .on { color: var(--ok); font-weight: 600; }
 .newtag { display: inline-block; background: #ffe08a; color: #5c4200; border-radius: 999px; padding: 0 .45rem; font-size: .72rem; font-weight: 700; margin-left: .4rem; }
+
+/* long Google Form question titles must not break the mapping layout */
+.two > div { min-width: 0; }
+.mapgrid { grid-template-columns: minmax(7.5rem, max-content) minmax(0, 1fr); }
+.mapgrid select, .mapgrid input[type=number] { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.mapgrid .multi { min-width: 0; }
+.multi label { max-width: 100%; overflow-wrap: anywhere; align-items: flex-start; }
+.multi input { margin-top: .2rem; flex: none; }

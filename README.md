@@ -33,6 +33,9 @@ Things to know:
 - The page can only see what is in the file. Google Forms doesn't update a downloaded CSV by itself: re-download and **overwrite the same file** (or save it under the same name) before the next check.
 - After closing or reloading the tab you must pick the file again (the browser forgets file access for safety). Your data and progress are still restored.
 
+## Coming back hours later
+Open the page in the **same browser and at the same address** (the GitHub Pages link, or the same `index.html`; each address has its own saved data). Your previous teams and progress are restored. Then load the newer CSV (drag it in, or click Watch and pick it): teams that weren't there before get a **NEW** tag, and the **📨 Verified, not yet invited** chip lists exactly who still needs an invite.
+
 ## Closing the tab
 Nothing runs in the background and nothing is ever sent automatically. Checking is instant, and every invite is opened by your own click. Progress (sent / added / overrides) is saved in the browser the moment it changes, so closing the tab loses nothing. "Sent" means *you opened the chat*, so if you closed WhatsApp before pressing Send, untick "sent" on that row.
 

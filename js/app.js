@@ -6,7 +6,7 @@
   'use strict';
   const C = window.Core;
   const LS_KEY = 'regverifier.v1';
-  const DEFAULT_TEMPLATE = 'Hi {leader}, your team "{team}" is registered ✅ Please join the participants group: {invite}';
+  const DEFAULT_TEMPLATE = 'Hi {leader}, your team "{team}" is registered for NACDeC-X ✅ Please join the participants group: {invite}';
 
   const $ = (s, r) => (r || document).querySelector(s);
   function h(tag, props, ...kids) {
@@ -58,8 +58,13 @@
   // ---------------- model ----------------
   function ensureMaps() {
     if (model.regT) {
-      const g = C.guessReg(model.regT.headers), m = S.regMap || {};
-      for (const k of Object.keys(g)) if (m[k] === undefined || (m[k] && !model.regT.headers.includes(m[k]))) m[k] = g[k];
+      const hs = model.regT.headers, g = C.guessReg(hs), m = S.regMap || {};
+      for (const k of Object.keys(g)) {
+        if (k === 'members') {
+          if (typeof m.members === 'string') m.members = m.members ? [m.members] : undefined;
+          if (!Array.isArray(m.members) || m.members.some((n) => !hs.includes(n))) m.members = g.members;
+        } else if (m[k] === undefined || (m[k] && !hs.includes(m[k]))) m[k] = g[k];
+      }
       S.regMap = m;
     }
     if (model.bankT) {
@@ -154,10 +159,18 @@
     mr.replaceChildren(); mb.replaceChildren();
     if (!model.regT) mr.append(h('span', { class: 'muted' }, 'Upload the registrations file first.'));
     else {
-      const f = [['team', 'Team name', 1], ['leader', 'Leader name', 1], ['phone', 'Leader WhatsApp no. *', 0], ['email', 'Email', 1], ['utr', 'UTR / transaction ID *', 0], ['members', 'Team members', 1]];
+      const f = [['team', 'Team name', 1], ['leader', 'Leader name', 1], ['phone', 'Leader WhatsApp no. *', 0], ['email', 'Leader email', 1], ['utr', 'UTR / transaction ID *', 0],
+        ['institution', 'Institution', 1], ['city', 'City', 1], ['proof', 'Payment proof link', 1]];
       f.forEach(([k, label, opt]) => {
         mr.append(h('label', {}, label), select(model.regT.headers, S.regMap[k], (v) => { S.regMap[k] = v; save(); recompute(); render(); }, !!opt));
       });
+      const mm = h('div', { class: 'multi' });
+      const nameish = model.regT.headers.filter((x) => x && (/name/i.test(x) || (S.regMap.members || []).includes(x)));
+      nameish.forEach((x) => mm.append(h('label', {}, h('input', {
+        type: 'checkbox', checked: (S.regMap.members || []).includes(x),
+        onchange: (e) => { const set = new Set(S.regMap.members || []); e.target.checked ? set.add(x) : set.delete(x); S.regMap.members = model.regT.headers.filter((y) => set.has(y)); save(); recompute(); render(); },
+      }), x)));
+      mr.append(h('label', {}, 'Member name columns (counts team size)'), mm);
     }
     if (!model.bankT) mb.append(h('span', { class: 'muted' }, 'Upload the bank statement first.'));
     else {
@@ -211,7 +224,7 @@
     if (!okFilter) return false;
     const q = view.q.trim().toLowerCase();
     if (!q) return true;
-    return [r.team, r.leader, r.phoneRaw, r.phone, r.utrRaw, r.utr, r.email].join(' ').toLowerCase().includes(q);
+    return [r.team, r.leader, r.phoneRaw, r.phone, r.utrRaw, r.utr, r.email, r.institution, r.city].join(' ').toLowerCase().includes(q);
   }
 
   function badge(r) {
@@ -231,7 +244,9 @@
       h('div', {}, 'CSV row ', r.rowNo, ' · UTR typed: ', h('span', { class: 'mono' }, r.utrRaw || '—')),
       h('div', {}, 'Phone typed: ', r.phoneRaw || '—', ' → ', h('span', { class: 'mono' }, r.phone ? '+' + r.phone : 'invalid')),
       r.email ? h('div', {}, 'Email: ', r.email) : null,
-      r.members ? h('div', {}, 'Members (' + r.teamSize + '): ', r.members) : null);
+      r.institution || r.city ? h('div', {}, 'Institution: ', [r.institution, r.city].filter(Boolean).join(', ')) : null,
+      r.members ? h('div', {}, 'Members (' + r.teamSize + '): ', r.members) : null,
+      r.proof ? h('div', {}, 'Payment proof: ', h('a', { href: r.proof, target: '_blank', rel: 'noopener noreferrer' }, 'open in Drive ↗')) : null);
     const bankBox = h('div', { class: 'box' });
     if (!r.bankMatches.length) bankBox.append('No matching credit in the bank file.');
     r.bankMatches.forEach((m) => bankBox.append(h('div', {},
@@ -407,13 +422,13 @@
       ['Verified but not yet invited', n((r) => isOk(r) && !flag(r).sent)],
     ];
     summary[0].bold = true;
-    const all = [['#', 'Team', 'Leader', 'Phone', 'UTR', 'Paid (₹)', 'Status', 'Reason', 'Invite sent at', 'Added to group', 'Bank evidence', 'Note']];
-    rs.forEach((r) => all.push([r.rowNo, r.team, r.leader, r.phone ? '+' + r.phone : '', r.utr, r.paid || '', st(r), r.reason, fmtTime(flag(r).sent), flag(r).added ? 'Yes' : '', ev(r), flag(r).note || '']));
-    const invited = [['Team', 'Leader', 'Phone', 'Invite sent at', 'Added to group', 'Paid (₹)']];
+    const all = [['#', 'Team', 'Institution', 'City', 'Leader', 'Phone', 'Team size', 'UTR', 'Paid (₹)', 'Status', 'Reason', 'Invite sent at', 'Added to group', 'Bank evidence', 'Payment proof', 'Note']];
+    rs.forEach((r) => all.push([r.rowNo, r.team, r.institution, r.city, r.leader, r.phone ? '+' + r.phone : '', r.teamSize || '', r.utr, r.paid || '', st(r), r.reason, fmtTime(flag(r).sent), flag(r).added ? 'Yes' : '', ev(r), r.proof, flag(r).note || '']));
+    const invited = [['Team', 'Institution', 'Leader', 'Phone', 'Invite sent at', 'Added to group', 'Paid (₹)']];
     rs.filter((r) => flag(r).sent).sort((a, b) => flag(a).sent - flag(b).sent)
-      .forEach((r) => invited.push([r.team, r.leader, r.phone ? '+' + r.phone : '', fmtTime(flag(r).sent), flag(r).added ? 'Yes' : 'No', r.paid || '']));
-    const todo = [['Team', 'Leader', 'Phone', 'Status', 'What to do']];
-    rs.filter((r) => !isOk(r)).forEach((r) => todo.push([r.team, r.leader, r.phone ? '+' + r.phone : '', st(r), r.reason]));
+      .forEach((r) => invited.push([r.team, r.institution, r.leader, r.phone ? '+' + r.phone : '', fmtTime(flag(r).sent), flag(r).added ? 'Yes' : 'No', r.paid || '']));
+    const todo = [['Team', 'Institution', 'Leader', 'Phone', 'Status', 'What to do', 'Payment proof']];
+    rs.filter((r) => !isOk(r)).forEach((r) => todo.push([r.team, r.institution, r.leader, r.phone ? '+' + r.phone : '', st(r), r.reason, r.proof]));
     const bytes = Xlsx.build([
       { name: 'Summary', rows: summary, widths: [38, 34] },
       { name: 'All teams', rows: all, header: true },
@@ -442,7 +457,7 @@
     $('#search').addEventListener('input', (e) => { view.q = e.target.value; renderTable(); });
 
     $('#btnSample').addEventListener('click', () => {
-      S.regText = window.SAMPLES.reg; S.regName = 'sample_registrations.csv'; S.regMap = {};
+      S.regText = window.SAMPLES.reg; S.regName = 'nacdec_form_responses_sample.csv'; S.regMap = {};
       S.bankText = window.SAMPLES.bank; S.bankName = 'sample_bank_statement.csv'; S.bankMap = {}; S.bankHeaderRow = 0;
       S.flags = {}; save(); recompute(); renderAll(); toast('Sample (fake) data loaded.');
     });
