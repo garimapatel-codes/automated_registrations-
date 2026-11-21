@@ -1,3 +1,6 @@
+.DS_Store
 *.csv
-!sample/*.csv
-sample/sample_bank_statement.csv
+*.pdf
+*.idbackup
+*.xlsx
+node_modules/

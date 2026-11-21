@@ -1,78 +1,49 @@
-# Registration Verifier (local-only)
+# Invite Desk
 
-Upload the Google Form CSV and the bank statement CSV. The page matches each team's UTR to a bank credit, checks the amount (₹8000 by default), and gives you a WhatsApp link per verified team leader.
+A private, local-first desk for registration volunteers: check who has paid, then send each verified team leader
+(and faculty mentor) the WhatsApp group invite — **once**, with a record of who has and hasn't been sent.
 
-## How to run
-Double-click **`index.html`**. It runs in any modern browser, needs no install and no internet.
+Everything runs in your browser. No server, no accounts, no uploads. Your data is encrypted with a passphrase
+(AES-256-GCM, PBKDF2) and stored only in this browser.
 
-## Privacy
-- No server, no accounts, no analytics, no CDN files.
-- The page ships with a Content-Security-Policy that makes the browser **refuse every network request** (fetch, XHR, WebSocket, images, fonts, iframes, forms). Data cannot be sent out even by a bug.
-- Data is kept in the browser's `localStorage` only when "Remember files & progress" is ticked. Untick it, or press **Clear all data**, to remove it.
-- Only link-opening touches the network: when you click *Send invite* the browser opens `wa.me/<number>` (that is WhatsApp itself, not this app).
-- Do not host this page on a shared computer's public folder, and clear data when the event is over.
+## Daily use
+1. **Registrations** – drop the latest CSV, *or* paste a Google Sheet link and press *Load / refresh*. New teams are flagged **NEW**.
+2. **Payments** – drop the bank-statement PDF. Each new PDF is *added*; duplicates are ignored; a statement can be removed.
+3. **Settings** – set the fee, your WhatsApp group invite link, and the messages (once).
+4. **Send invites** – *Open WhatsApp* → press Send in WhatsApp → come back and press *Yes, I sent it*. That person can never be queued again.
 
-## Workflow
-1. Upload both CSVs (or press *Try with sample data*).
-2. Check the auto-detected columns (step 2). Bank statements with account details above the table are handled; change *Header row no.* if needed.
-3. Set fee, max team size, and choose the action button mode:
-   - **wa.me link only** — opens a blank chat with the leader.
-   - **Ready-to-send invite message** — opens the chat with your message and the group invite link filled in; you press Send.
-4. Use the status bar (always visible) to filter. Open **Show evidence** on any row to see the exact bank row that was matched (UTR highlighted) before you invite anyone.
-5. *Send to next verified leader ▶* walks through verified, not-yet-invited leaders one click at a time.
-6. Tick **added** once the leader is in the group. Progress survives a page reload.
-
-## New registrations keep arriving? Use "Watch"
-Browsers can't read a path on their own, so you pick the file **once**:
-1. In step 1 click **👁 Watch a file on this computer…** under the registrations box (and/or the bank box) and choose the CSV.
-2. Choose how often to re-check (1 min … 6 hours). The page re-reads that same file on the timer and whenever you click **Check now**.
-3. If the file changed, new teams are tagged **NEW**, statuses refresh, and a message says how many were found. Invites sent / added / manual overrides are kept.
-
-Things to know:
-- Works in **Chrome or Edge** only (other browsers: re-upload manually). The tab must stay open and the PC awake.
-- The page can only see what is in the file. Google Forms doesn't update a downloaded CSV by itself: re-download and **overwrite the same file** (or save it under the same name) before the next check.
-- After closing or reloading the tab you must pick the file again (the browser forgets file access for safety). Your data and progress are still restored.
-
-## Coming back hours later
-Open the page in the **same browser and at the same address** (the GitHub Pages link, or the same `index.html`; each address has its own saved data). Your previous teams and progress are restored. Then load the newer CSV (drag it in, or click Watch and pick it): teams that weren't there before get a **NEW** tag, and the **📨 Verified, not yet invited** chip lists exactly who still needs an invite.
-
-## Closing the tab
-Nothing runs in the background and nothing is ever sent automatically. Checking is instant, and every invite is opened by your own click. Progress (sent / added / overrides) is saved in the browser the moment it changes, so closing the tab loses nothing. "Sent" means *you opened the chat*, so if you closed WhatsApp before pressing Send, untick "sent" on that row.
-
-## Final report (Excel)
-**⬇ Download final Excel report** produces `registration_report_<date>.xlsx` with four sheets: *Summary*, *All teams* (status, bank evidence, invite time, added), *Invited* (exactly who was sent the link and when) and *Needs action* (everyone not verified, with the reason). It is built inside the page, so nothing is uploaded. The CSV button gives the same "All teams" data as plain CSV.
-
-## Works with the NACDeC-X form layout
-Columns are auto-detected: leader = *Team Member 1* (name, WhatsApp number, email), UTR = *Enter Transaction ID*, team size = number of filled *Team Member N: Name* columns, plus institution, city and the payment-proof Drive link (shown as "open in Drive" in the evidence panel, handy when a UTR is Pending). Typed prefixes such as "UTR No:" are ignored when matching.
-
-## Statuses
+## What the statuses mean
 | Status | Meaning |
 |---|---|
-| ✅ Verified | UTR found as a bank credit, amount ≥ fee |
-| ⚠️ Underpaid | UTR found, amount below fee |
-| ⏳ Pending | UTR not in the bank file (yet) — upload a fresher statement or check for a typo |
-| 🚫 Duplicate | Same UTR or same leader phone in more than one registration |
-| 🔍 Needs review | No UTR, bad phone, too many members, partial-text match, or UTR in several bank credits |
-| Manual | You can force *Verified* / *Rejected* per team; it is labelled "(manual)" everywhere |
+| Verified | Transaction ID found on a loaded statement and the amount ≥ fee |
+| Awaiting statement | Registered after the newest statement ends — add the next statement |
+| Amount short | Paid less than the fee |
+| Check manually | ID isn't a 12-digit UPI reference (e.g. a NEFT/UTR code), or only a partial match. Look at the payment proof, then *Approve manually* with a note |
+| Duplicate ID | Same transaction ID/payment used by two teams |
+| Fix details | Leader's phone number or name is missing/invalid |
 
-## "One-time" invite links
-WhatsApp has no single-use invite links, and a page that never contacts a server cannot create them. Do this instead: in the WhatsApp group settings turn on **Approve new participants**. Anyone using the link only *requests* to join; you approve just the people shown as Verified (use **Copy phones to approve**). The app also marks each invite as *sent* and asks before you send a second one.
+## Guard rails
+- Only verified (or manually approved, with a written reason) teams can be invited.
+- A phone number already in the sent list is blocked — across re-uploads, new statements and new sheet loads.
+- One invite "in progress" at a time; nothing is recorded until you confirm it.
+- Daily send limit (default 30) to protect your WhatsApp number; invite-link format check; auto-lock when idle.
+- *Undo* exists but asks for confirmation and is logged in Activity.
+- WhatsApp has no single-use links and can't be automated from a web page, so "sent" means *you pressed Send*.
 
-## Files
-```
-index.html        page + privacy policy (CSP)
-css/style.css
-js/core.js        CSV parsing + verification logic (no DOM; unit-tested)
-js/app.js         interface, localStorage, links, file watching, report export
-js/xlsx.js        tiny offline .xlsx writer
-js/samples.js     fake demo data
-sample/           fake data in the NACDeC-X form's exact column layout (registrations + bank statement)
-tests/test.js     run: node tests/test.js
-```
+## Running it
+- **Hosted** (GitHub Pages): open the link; nothing to install.
+- **On your PC**: double-click `start.bat`. PDF reading needs `http://`, so opening `index.html` directly (file://) won't read PDFs.
+- Reading a PDF takes ~2 s per page (it uses OCR because bank PDFs printed from the browser are pictures, not text).
+  A running balance check flags any row where a digit may have been misread.
 
-## Known limits
-- One bank transfer per team (≥ fee). Split payments are not summed.
-- UTR typos stay *Pending*; fix the UTR in the CSV and re-upload (progress is kept per phone+UTR).
-- Phone numbers are assumed to be Indian (+91) unless you change the country code.
-- CSV only (export Excel statements as CSV first).
-- Watching a file needs Chrome/Edge and an open tab; there is no background service.
+## Backup
+Settings ▸ *Download encrypted backup*. Clearing browser data deletes the vault, so back up regularly.
+The backup is useless without your passphrase. There is no recovery if you forget it.
+
+## Google Sheet link — privacy
+Press *Publish to web* in Google Sheets and paste the CSV link. Anyone holding that link can read the sheet, so don't share
+it, and un-publish when the event ends. The app only fetches it when you press the button.
+
+## Development
+`node tests/test.js` — unit tests with invented data. Libraries bundled in `vendor/`: pdf.js 3.11 (Apache-2.0),
+tesseract.js 5 + core + English data (Apache-2.0), Plus Jakarta Sans (OFL). No CDNs.
