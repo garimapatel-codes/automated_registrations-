@@ -451,7 +451,7 @@
       state.payments.length ? (rows.length ? h('div', { class: 'tbl-wrap' }, h('table', null, h('thead', null, h('tr', null, ['Date', 'Amount', 'Narration', 'Matched to', 'Read'].map((x) => h('th', null, x)))),
         h('tbody', null, rows.map((p) => h('tr', null, h('td', null, p.date || '—'), h('td', null, h('b', null, '₹' + Core.fmt(p.amount))), h('td', { class: 'small' }, p.text.slice(0, 120)),
           h('td', null, matchedBy.has(p) ? h('span', { class: 'chip ok' }, matchedBy.get(p)) : h('span', { class: 'chip mute' }, '—')),
-          h('td', null, p.check === 'ok' ? h('span', { class: 'chip ok' }, 'checked') : p.check === 'mismatch' ? h('span', { class: 'chip warn' }, 'verify by eye') : h('span', { class: 'chip mute' }, p.check === 'inferred' ? 'inferred' : 'unchecked'))))))) : empty('No payments match', '')) : null);
+          h('td', null, p.check === 'ok' ? h('span', { class: 'chip ok', title: 'The running balance adds up, so this amount was read correctly' }, 'sure') : p.check === 'mismatch' ? h('span', { class: 'chip warn' }, 'verify by eye') : h('span', { class: 'chip mute' }, p.check === 'inferred' ? 'inferred' : 'unchecked'))))))) : empty('No payments match', '')) : null);
   }
 
   // --- Settings
