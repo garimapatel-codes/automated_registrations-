@@ -393,8 +393,9 @@
     setTimeout(() => { if (ui.view === 'send') renderContent(); }, 2100);
   }
   function sendView() {
+    if (state.settings.deliveryMode === 'add') return addView();
     const q = Core.queue(derived), s = state.settings, p = state.pending;
-    const kids = [head('Send invites', 'One person at a time. Nobody is ever sent the same invite twice.')];
+    const kids = [head('Send invites', 'One person at a time. Nobody is ever sent the same invite twice.'), modeSwitch()];
     if (!Core.validInvite(s.inviteLink)) kids.push(h('div', { class: 'banner red' }, h('div', { class: 'grow' }, h('b', null, 'Add your WhatsApp group invite link first. '), 'Settings ▸ Invite link (it looks like https://chat.whatsapp.com/…).'), h('button', { class: 'btn sm', onclick: () => go('settings') }, 'Open Settings')), h('div', { class: 'field' }));
     if (p) {
       const ready = Date.now() - ui.openedAtMs > 2000 || !ui.openedAtMs;
@@ -414,13 +415,44 @@
     return h('div', null, kids);
   }
 
+
+  // --- "Add them myself" mode
+  function modeSwitch() {
+    const s = state.settings;
+    return h('div', { class: 'filters' }, [['link', 'Send invite link'], ['add', 'Add them myself']].map(([k, l]) => h('button', { class: 'fbtn' + (s.deliveryMode === k ? ' on' : ''), onclick: () => { s.deliveryMode = k; commit(); } }, l)));
+  }
+  async function copyText(t) { try { await navigator.clipboard.writeText(t); toast('Copied ' + t); } catch (e) { toast('Could not copy — select the number manually.', true); } }
+  function addView() {
+    const q = Core.queue(derived), s = state.settings;
+    const list = q.filter((x) => matches(ui.q, x.name, x.team, x.phone));
+    const kids = [head('Add people to the group', 'You add them yourself, so no invite link is ever sent or shared.'), modeSwitch()];
+    kids.push(h('div', { class: 'card white' }, h('h2', null, 'Fast way: import them as contacts'),
+      h('ol', { class: 'small' }, h('li', null, 'Download the contacts file below.'), h('li', null, 'Import it at contacts.google.com ▸ Import (or open the .vcf on your phone). Your phone syncs it.'),
+        h('li', null, 'In your WhatsApp group: Group info ▸ Add participants ▸ search “' + (s.namePrefix || '').trim() + '” and tick everyone.'), h('li', null, 'Come back and press “Mark all as added”.')),
+      h('div', { class: 'field' }), h('div', { class: 'row wrap' },
+        h('button', { class: 'btn', disabled: !q.length, onclick: () => { download(Core.contactsCsv(state, q), 'nacdec-contacts-' + day() + '.csv', 'text/csv'); toast('Contacts CSV downloaded. It contains phone numbers — keep it private.'); } }, icon('download'), 'Google Contacts CSV'),
+        h('button', { class: 'btn ghost', disabled: !q.length, onclick: () => { download(Core.contactsVcf(state, q), 'nacdec-contacts-' + day() + '.vcf', 'text/vcard'); toast('Contacts file downloaded.'); } }, icon('download'), 'Phone contacts (.vcf)'),
+        h('button', { class: 'btn pink', disabled: !q.length, onclick: async () => {
+          if (!(await confirmBox('Mark everyone listed as added?', `${q.length} people will be recorded as added to the group and won’t appear here again. Only do this after you have actually added them.`, 'Yes, they are added'))) return;
+          const r = Core.markAdded(state, q); commit(); toast(`${r.n} marked as added.`);
+        } }, icon('check'), 'Mark all as added')),
+      h('p', { class: 'hint' }, 'Only verified (or manually approved) people who haven’t been handled yet are included. Names get the prefix “' + (s.namePrefix || '') + '” so they’re easy to find; change it in Settings. Delete the contacts afterwards if you like.')));
+    kids.push(h('div', { class: 'field' }));
+    kids.push(list.length ? h('div', { class: 'list' }, list.map((x) => h('div', { class: 'item' }, h('div', { class: 'ico' + (x.role === 'mentor' ? ' m' : '') }, initials(x.name)),
+      h('div', { class: 't' }, h('b', null, x.name), h('span', null, `${x.role === 'mentor' ? 'Faculty mentor' : 'Team leader'} · ${x.team} · ${Core.prettyPhone(x.phone)}`)),
+      h('button', { class: 'btn ghost sm', onclick: () => copyText('+' + x.phone) }, 'Copy number'),
+      h('button', { class: 'btn sm', onclick: () => { Core.markAdded(state, [x]); commit(); } }, icon('check'), 'Mark as added'))))
+      : empty('Nobody is waiting', 'Verified teams appear here. If you type a number straight into Add participants (no contact needed), use Copy number, then Mark as added.'));
+    return h('div', null, kids);
+  }
+
   // --- Sent log
   function sentView() {
     const rows = state.ledger.slice().reverse().filter((l) => matches(ui.q, l.name, l.team, l.phone, l.role));
     return h('div', null, head('Sent log', `${state.ledger.length} people marked as invited. This list is what prevents double-sending.`,
       h('button', { class: 'btn ghost sm', onclick: exportSentCsv }, icon('download'), 'CSV'), h('button', { class: 'btn sm', onclick: exportXlsx }, icon('download'), 'Excel report')),
       rows.length ? h('div', { class: 'tbl-wrap' }, h('table', null, h('thead', null, h('tr', null, ['When', 'Who', 'Team', 'Number', ''].map((x) => h('th', null, x)))),
-        h('tbody', null, rows.map((l) => h('tr', null, h('td', null, when(l.ts)), h('td', null, h('div', { class: 'nm' }, l.name), h('div', { class: 'sb' }, l.role === 'mentor' ? 'Faculty mentor' : 'Team leader')), h('td', null, l.team), h('td', null, Core.prettyPhone(l.phone)),
+        h('tbody', null, rows.map((l) => h('tr', null, h('td', null, when(l.ts)), h('td', null, h('div', { class: 'nm' }, l.name), h('div', { class: 'sb' }, (l.role === 'mentor' ? 'Faculty mentor' : 'Team leader') + (l.via === 'added' ? ' · added by you' : ' · invite link'))), h('td', null, l.team), h('td', null, Core.prettyPhone(l.phone)),
           h('td', null, h('button', { class: 'btn ghost sm', onclick: async () => {
             if (!(await confirmBox('Remove this “invited” mark?', `${l.name} will appear in the send queue again and could be sent a second invite. Only do this if the message was never actually delivered.`, 'Remove mark', true))) return;
             Core.undoSent(state, l.id); commit();
@@ -482,6 +514,7 @@
       h('div', { class: 'card white' }, h('h2', null, 'Guard rails'), h('div', { class: 'field' }),
         f('Daily send limit', h('input', { type: 'number', min: 0, max: 500, value: s.dailyLimit, onchange: upd('dailyLimit', (v) => Math.max(0, parseInt(v, 10) || 0)) }), 'Sending many first-time messages in a day can get a WhatsApp number restricted. 0 = no limit.'),
         f('Auto-lock after (minutes idle)', h('input', { type: 'number', min: 1, max: 240, value: s.autoLockMin, onchange: upd('autoLockMin', (v) => Math.min(240, Math.max(1, parseInt(v, 10) || 10))) })),
+        f('Contact name prefix (for “Add them myself”)', h('input', { type: 'text', value: s.namePrefix, onchange: upd('namePrefix') }), 'Added before each name in the contacts file so you can find them in WhatsApp.'),
         f('Default country code', h('input', { type: 'text', value: s.cc, onchange: upd('cc', (v) => v.replace(/\D/g, '') || '91') }), 'Used for numbers typed without one.'),
         h('ul', { class: 'small muted' }, h('li', null, 'Only verified (or manually approved) teams can be invited.'), h('li', null, 'A number that has been invited is blocked from being invited again.'), h('li', null, 'Only one invite can be “in progress” at a time.'), h('li', null, 'Nothing is recorded as sent until you confirm it.')))),
       h('div', { class: 'field' }),

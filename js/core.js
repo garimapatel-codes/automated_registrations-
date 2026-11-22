@@ -128,7 +128,7 @@
     return {
       v: 1,
       settings: { name: '', fee: '', feeMode: 'team', inviteLink: '', leaderMsg: DEFAULT_LEADER_MSG, mentorMsg: DEFAULT_MENTOR_MSG,
-        inviteMentors: true, dailyLimit: 30, autoLockMin: 10, sheetUrl: '', cc: '91', cols: null },
+        inviteMentors: true, deliveryMode: 'link', namePrefix: 'NACDeC-X - ', dailyLimit: 30, autoLockMin: 10, sheetUrl: '', cc: '91', cols: null },
       reg: null, seen: {}, payments: [], pdfs: [], approvals: {}, ledger: [], pending: null, log: [],
     };
   }
@@ -336,7 +336,35 @@
     if (f) logEvent(state, 'pdf', `Removed statement "${f.name}"`);
   }
 
-  return { parseCSV, toTable, guessColumns, missingColumns, normPhone, maskPhone, prettyPhone, normTxn, parseTs, validInvite, fillTemplate, waLink, sheetCsvUrl,
+
+  // ---------- "add them myself" mode ----------
+  const contactName = (state, p) => (state.settings.namePrefix || '') + p.name;
+  const q2 = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  /** Google Contacts import file (CSV). */
+  function contactsCsv(state, people) {
+    const lines = ['First Name,Last Name,Labels,Phone 1 - Label,Phone 1 - Value'];
+    people.forEach((p) => lines.push([q2(contactName(state, p)), q2(p.role === 'mentor' ? '(Mentor)' : ''), q2('NACDeC-X'), 'Mobile', q2('+' + p.phone)].join(',')));
+    return '﻿' + lines.join('\r\n') + '\r\n';
+  }
+  /** vCard file — imports straight into iPhone/Android contacts. */
+  function contactsVcf(state, people) {
+    const esc = (v) => String(v).replace(/([\;,])/g, '\\$1').replace(/\n/g, ' ');
+    return people.map((p) => ['BEGIN:VCARD', 'VERSION:3.0', 'FN:' + esc(contactName(state, p)), 'N:' + esc(contactName(state, p)) + ';;;;', 'TEL;TYPE=CELL:+' + p.phone, 'CATEGORIES:NACDeC-X', 'END:VCARD'].join('\r\n')).join('\r\n') + '\r\n';
+  }
+  /** Records that the volunteer added these people to the group themselves. */
+  function markAdded(state, items, now) {
+    if (state.pending) return { ok: false, error: 'Finish the pending invite first.' };
+    let n = 0; const t = (now || new Date()).toISOString();
+    items.forEach((item) => {
+      if (state.ledger.some((l) => l.phone === item.phone)) return;
+      state.ledger.push({ id: 'L' + Date.now().toString(36) + state.ledger.length, ts: t, phone: item.phone, name: item.name, role: item.role, team: item.team, tid: item.tid, via: 'added' });
+      n++;
+    });
+    if (n) logEvent(state, 'sent', n === 1 ? `Marked ${items[0].name} (${items[0].team}) as added to the group` : `Marked ${n} people as added to the group`);
+    return { ok: true, n };
+  }
+
+  return { contactsCsv, contactsVcf, markAdded, parseCSV, toTable, guessColumns, missingColumns, normPhone, maskPhone, prettyPhone, normTxn, parseTs, validInvite, fillTemplate, waLink, sheetCsvUrl,
     newState, logEvent, compute, queue, beginSend, confirmSent, cancelPending, undoSent, approveTeam, revokeApproval, loadRegistrations, addStatement,
     removeStatement, sentToday, todayKey, fmt, STATUS, STATUS_TEXT, OK_STATUSES, DEFAULT_LEADER_MSG, DEFAULT_MENTOR_MSG };
 });

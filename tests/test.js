@@ -51,6 +51,22 @@ function fakePage(rows, opts) {
     assert.strictEqual(r.chainBad, 1);
     assert.strictEqual(r.credits[1].check, 'mismatch');
   });
+  await t('statement: a missed date cell does not hide or merge payments', () => {
+    const rows = [
+      { dd: '03', mon: 'Oct', narr: 'TRANSFERUPI/CR/111122223333/A', credit: 5900, bal: 1000 },
+      { dd: '04', mon: 'Oct', narr: 'TRANSFERUPI/CR/222233334444/B', credit: 8000, bal: 9000 },
+      { dd: '05', mon: 'Oct', narr: 'TRANSFERUPI/CR/333344445555/C', credit: 8000, bal: 17000 },
+      { dd: '06', mon: 'Oct', narr: 'TRANSFERUPI/CR/444455556666/D', credit: 5900, bal: 22900 },
+    ];
+    for (const drop of [['04-'], ['05-'], ['04-', '05-'], ['03-'], ['06-']]) {
+      const pg = fakePage(rows);
+      pg.words = pg.words.filter((w) => !(drop.includes(w.text) && w.left < 200));   // OCR failed to read these date starts
+      const r = S.parseStatement([pg]);
+      assert.deepStrictEqual(r.credits.map((c) => c.amount), [5900, 8000, 8000, 5900], 'dropped ' + drop);
+      assert.strictEqual(r.chainBad, 0);
+      assert.ok(r.credits.every((c, i) => S.tokensOf(c.text).includes(['111122223333', '222233334444', '333344445555', '444455556666'][i])), 'tokens stay with their own row, dropped ' + drop);
+    }
+  });
   await t('statement: period header', () => {
     assert.deepStrictEqual(S.parsePeriod('Account Statement for the period 01/10/2026 to 31/10/2026'), { from: '2026-10-01', to: '2026-10-31' });
   });
@@ -185,6 +201,16 @@ function fakePage(rows, opts) {
     const r = Core.loadRegistrations(st, Core.toTable(Core.parseCSV(more)), 'file', 'f2.csv');
     assert.strictEqual(r.added, 1);
     assert.ok(Core.compute(st).teams.find((x) => x.team === 'Zulu').isNew);
+  });
+
+  await t('add-myself mode: contacts files and sent-once', () => {
+    const st = setup(); const q = Core.queue(Core.compute(st));
+    const csv2 = Core.contactsCsv(st, q); assert.ok(csv2.includes('+919876500001') && csv2.includes('NACDeC-X - Asha'));
+    assert.ok(Core.contactsVcf(st, q).includes('TEL;TYPE=CELL:+919876500009'));
+    assert.strictEqual(Core.markAdded(st, q).n, 3);
+    assert.strictEqual(Core.queue(Core.compute(st)).length, 0);
+    assert.strictEqual(Core.markAdded(st, q).n, 0, 'second time adds nothing');
+    assert.ok(!Core.beginSend(st, q[0]).ok, 'link send blocked after being added');
   });
 
   // ---------- vault ----------

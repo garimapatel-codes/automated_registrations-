@@ -79,14 +79,18 @@
     const pageEnd = footer.length ? Math.min.apply(null, footer) - 4 : Infinity;
     const lineH = median(words.map((w) => w.height)) || 20;
 
+    // Row bands start at each date. The first band also covers anything above the first date, and a page with no
+    // readable date still gets one band — a missed date must never hide a payment.
+    const tops = starts.map((st) => st.top - lineH * 0.4);
+    const edges = starts.length ? [cols.headerBottom].concat(tops.slice(1), [pageEnd]) : [cols.headerBottom, pageEnd];
+    const isAmt = (w) => moneyCands(w.text).length && w.left + w.width > cols.dR - tol * 1.6;
+    const cy = (w) => w.top + w.height / 2;
+
     const rows = [];
-    starts.forEach((s, i) => {
-      const top = s.top - lineH * 0.4;
-      const bottom = i + 1 < starts.length ? starts[i + 1].top - lineH * 0.4 : pageEnd;
-      const band = words.filter((w) => w.top + w.height / 2 >= top && w.top + w.height / 2 < bottom);
+    const emit = (band, lo, hi) => {
       const dws = band.filter((w) => w.left < cols.dateCut);
       const rest = band.filter((w) => w.left >= cols.dateCut);
-      const dt = parseDateWords(dws.sort((a, b) => a.top - b.top), ctx.fallbackYear);
+      const dt = parseDateWords(dws.slice().sort((a, b) => a.top - b.top), ctx.fallbackYear);
       let credC = [], debC = [], balC = [];
       const textWords = [];
       for (const w of rest) {
@@ -98,11 +102,23 @@
           else if (Math.abs(right - cols.dR) <= tol) debC = v;
         } else if (right < cols.dR - tol * 1.6) textWords.push(w);
       }
-      // narration text in reading order
       textWords.sort((a, b) => (Math.abs(a.top - b.top) > lineH * 0.5 ? a.top - b.top : a.left - b.left));
       const text = textWords.map((w) => w.text).join(' ').replace(/\s+/g, ' ').trim();
       rows.push({ date: dt.date, credC, debC, balC, text });
-    });
+    };
+    for (let i = 0; i < edges.length - 1; i++) {
+      const lo = edges[i], hi = edges[i + 1];
+      const band = words.filter((w) => cy(w) >= lo && cy(w) < hi);
+      // money lines inside this band; two or more means two transactions were glued together -> split between them
+      const ys = band.filter(isAmt).map(cy).sort((a, b) => a - b);
+      const lines = [];
+      ys.forEach((y) => { if (!lines.length || y - lines[lines.length - 1].y2 > lineH * 1.3) lines.push({ y1: y, y2: y }); else lines[lines.length - 1].y2 = y; });
+      if (lines.length < 2) { emit(band, lo, hi); continue; }
+      const cuts = [lo];
+      for (let k = 0; k + 1 < lines.length; k++) cuts.push((lines[k].y2 + lines[k + 1].y1) / 2);
+      cuts.push(hi);
+      for (let k = 0; k < cuts.length - 1; k++) emit(band.filter((w) => cy(w) >= cuts[k] && cy(w) < cuts[k + 1]), cuts[k], cuts[k + 1]);
+    }
     return { rows };
   }
 
