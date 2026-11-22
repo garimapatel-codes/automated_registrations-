@@ -139,7 +139,7 @@
         } }, 'Erase all data') : null)));
   }
 
-  function enter() { ui.view = 'dash'; ui.q = ''; derived = Core.compute(state); lastActive = Date.now(); render(); }
+  function enter() { Core.migrate(state); ui.view = 'dash'; ui.q = ''; derived = Core.compute(state); lastActive = Date.now(); render(); }
   async function lock(why) {
     await flushSave().catch(() => {});
     await Ocr.stop(); vault.lock(); state = null; derived = null; ui.ocr = null; ui.expanded.clear();

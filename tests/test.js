@@ -51,6 +51,14 @@ function fakePage(rows, opts) {
     assert.strictEqual(r.chainBad, 1);
     assert.strictEqual(r.credits[1].check, 'mismatch');
   });
+  await t('old saved data gets new default settings (name prefix)', () => {
+    const st = { v: 1, settings: { name: 'X', fee: '8000' }, reg: null, ledger: [] };
+    Core.migrate(st);
+    assert.strictEqual(st.settings.namePrefix, 'NACDeC-X - ');
+    assert.strictEqual(st.settings.name, 'X');
+    const csv = Core.contactsCsv(st, [{ name: 'Test Person', phone: '911234567890', role: 'leader' }]);
+    assert.ok(csv.includes('NACDeC-X - Test Person'));
+  });
   await t('statement: a missed date cell does not hide or merge payments', () => {
     const rows = [
       { dd: '03', mon: 'Oct', narr: 'TRANSFERUPI/CR/111122223333/A', credit: 5900, bal: 1000 },

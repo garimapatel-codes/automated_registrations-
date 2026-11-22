@@ -124,6 +124,15 @@
   }
 
   // ---------- state ----------
+  /** Older saved data may predate newer settings; fill any that are missing so nothing silently becomes blank. */
+  function migrate(state) {
+    const d = newState();
+    state.settings = Object.assign({}, d.settings, state.settings);
+    if (state.settings.namePrefix == null) state.settings.namePrefix = d.settings.namePrefix;
+    ['seen', 'approvals'].forEach((k) => { if (!state[k]) state[k] = {}; });
+    ['payments', 'pdfs', 'ledger', 'log'].forEach((k) => { if (!state[k]) state[k] = []; });
+    return state;
+  }
   function newState() {
     return {
       v: 1,
@@ -364,7 +373,7 @@
     return { ok: true, n };
   }
 
-  return { contactsCsv, contactsVcf, markAdded, parseCSV, toTable, guessColumns, missingColumns, normPhone, maskPhone, prettyPhone, normTxn, parseTs, validInvite, fillTemplate, waLink, sheetCsvUrl,
+  return { migrate, contactsCsv, contactsVcf, markAdded, parseCSV, toTable, guessColumns, missingColumns, normPhone, maskPhone, prettyPhone, normTxn, parseTs, validInvite, fillTemplate, waLink, sheetCsvUrl,
     newState, logEvent, compute, queue, beginSend, confirmSent, cancelPending, undoSent, approveTeam, revokeApproval, loadRegistrations, addStatement,
     removeStatement, sentToday, todayKey, fmt, STATUS, STATUS_TEXT, OK_STATUSES, DEFAULT_LEADER_MSG, DEFAULT_MENTOR_MSG };
 });
